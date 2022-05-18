@@ -132,7 +132,7 @@ class GammaQuantileFunction(torch.autograd.Function):
             tf_shape = tf.constant(shape.detach().numpy(), name='shape')
             dist = tfp.distributions.Gamma(concentration=tf_shape, rate=tf_shape)
             tf_rates = dist.quantile(q)
-        return torch.tensor(tf_rates.numpy(), dtype=shape.dtype)
+        return torch.tensor(tf_rates.numpy(), dtype=shape.dtype, device=shape.device)
 
     def backward(ctx, grad_output: torch.Tensor) -> torch.Tensor:
         return None, ctx.shape_grad * grad_output
