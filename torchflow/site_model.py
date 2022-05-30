@@ -119,6 +119,7 @@ class GammaQuantileFunction(torch.autograd.Function):
         quantiles: torch.Tensor,
         shape: torch.Tensor,
     ) -> torch.Tensor:
+        ctx.quantiles = quantiles
         q = tf.constant(quantiles.numpy(), name='q')
 
         if shape.requires_grad:
@@ -135,4 +136,4 @@ class GammaQuantileFunction(torch.autograd.Function):
         return torch.tensor(tf_rates.numpy(), dtype=shape.dtype, device=shape.device)
 
     def backward(ctx, grad_output: torch.Tensor) -> torch.Tensor:
-        return None, ctx.shape_grad * grad_output
+        return None, torch.sum(ctx.shape_grad * grad_output * ctx.quantiles, -1)
