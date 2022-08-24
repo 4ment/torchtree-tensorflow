@@ -36,11 +36,13 @@ class GammaSiteModel(SiteModel):
         return self._invariant.tensor if self._invariant else None
 
     def update_rates(self, shape: torch.Tensor, invariant: torch.Tensor):
+        # rates = DiscreteGammaFunction.apply(self.categories, invariant, shape)
         if invariant:
             cat = self.categories - 1
-            quantile = (2.0 * torch.arange(cat, device=shape.device) + 1.0) / (
-                2.0 * cat
-            )
+            quantile = (
+                2.0 * torch.arange(cat, dtype=self.shape.dtype, device=shape.device)
+                + 1.0
+            ) / (2.0 * cat)
             self.probs = torch.cat(
                 (
                     invariant,
@@ -55,7 +57,11 @@ class GammaSiteModel(SiteModel):
             )
         else:
             quantile = (
-                2.0 * torch.arange(self.categories, device=shape.device) + 1.0
+                2.0
+                * torch.arange(
+                    self.categories, dtype=self.shape.dtype, device=shape.device
+                )
+                + 1.0
             ) / (2.0 * self.categories)
             rates = GammaQuantileFunction.apply(quantile, shape)
 
@@ -119,21 +125,24 @@ class GammaQuantileFunction(torch.autograd.Function):
         quantiles: torch.Tensor,
         shape: torch.Tensor,
     ) -> torch.Tensor:
-        ctx.quantiles = quantiles
-        q = tf.constant(quantiles.numpy(), name='q')
+        tf_quantile = tf.constant(quantiles.numpy(), name='q')
 
         if shape.requires_grad:
-            with tf.GradientTape() as tape:
+            with tf.GradientTape(persistent=True) as tape:
                 tf_shape = tf.Variable(shape.detach().numpy(), name='shape')
                 dist = tfp.distributions.Gamma(concentration=tf_shape, rate=tf_shape)
-                tf_rates = dist.quantile(q)
-                grad = tape.gradient(tf_rates, tf_shape)
+                tf_rates = dist.quantile(tf_quantile)
+                # gradient returns sum_i d tf_rates[i])/d tf_shape
+                # but we need the individual derivatives
+                grad = tf.concat(
+                    [tape.gradient(tf_rate, tf_shape) for tf_rate in tf_rates], -1
+                )
                 ctx.shape_grad = torch.tensor(grad.numpy(), dtype=shape.dtype)
         else:
             tf_shape = tf.constant(shape.detach().numpy(), name='shape')
             dist = tfp.distributions.Gamma(concentration=tf_shape, rate=tf_shape)
-            tf_rates = dist.quantile(q)
+            tf_rates = dist.quantile(tf_quantile)
         return torch.tensor(tf_rates.numpy(), dtype=shape.dtype, device=shape.device)
 
     def backward(ctx, grad_output: torch.Tensor) -> torch.Tensor:
-        return None, torch.sum(ctx.shape_grad * grad_output * ctx.quantiles, -1)
+        return None, ctx.shape_grad * grad_output
