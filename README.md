@@ -1,7 +1,7 @@
 # torchtree-tensorflow
- [![Python package](https://github.com/4ment/torchtree-tensorflow/actions/workflows/python-package.yml/badge.svg)](https://github.com/4ment/torchtree-tensorflow/actions/workflows/python-package.yml)
- 
-torchtree-flow is a package providing extra functionalities from [tensorflow] for [torchtree]
+ [![Testing](https://github.com/4ment/torchtree-tensorflow/actions/workflows/python-package.yml/badge.svg)](https://github.com/4ment/torchtree-tensorflow/actions/workflows/python-package.yml)
+
+`torchtree-tensorflow` is a package that enhances the functionalities of [torchtree] by incorporating additional features from [tensorflow].
 
 ## Dependencies
  - [torchtree]
@@ -9,31 +9,29 @@ torchtree-flow is a package providing extra functionalities from [tensorflow] fo
 
 ## Installation
 
-### Get the source code
+### Installing from source
 ```bash
-git clone https://github.com/4ment/torchtree-tensorflow
-cd torchtree-tensorflow
-```
-
-### Install using pip
-```bash
-pip install .
+git clone https://github.com/4ment/torchtree-scipy
+pip install torchtree-scipy/
 ```
 
 ## Features
-### Discrete Gamma site model
-The easiest way to use this model is to generate a json configuration file with a Weibull site model with the appropriate number of rate categories and then replace `WeibullSiteModel` with `torchflow.GammaSiteModel`:
+### Discrete gamma site model
+This model implements the discretized gamma distribution to model rate heterogeity accross sites. The gradient of this model with respect to the shape parameter is calculated with automatic differentiation.
+In order to use this model the type of the site model must be changed to `torchtree_scipy.GammaSiteModel` in the JSON configuration file.
 
-```bash
-torchtree-cli advi -i data.fa -t data.tree -C 4 > data.json
-sed -i 's/WeibullSiteModel/torchflow.GammaSiteModel/' data.json
-torchtree data.json
-```
+## License
 
-or in one line:
-```bash
-torchtree-cli advi -i data.fa -t data.tree -C 4 | sed 's/WeibullSiteModel/torchflow.GammaSiteModel/' | torchtree -
-```
+Distributed under the GPLv3 License. See [LICENSE](LICENSE) for more information.
 
+## Acknowledgements
+
+torchtree-scipy makes use of the following libraries and tools, which are under their own respective licenses:
+
+ - [PyTorch]
+ - [tensorflow]
+ - [torchtree]
+
+[PyTorch]: https://pytorch.org
 [torchtree]: https://github.com/4ment/torchtree
 [tensorflow]: https://github.com/tensorflow/tensorflow

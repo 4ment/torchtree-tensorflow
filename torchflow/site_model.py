@@ -1,118 +1,39 @@
-from typing import Optional, Union
-
 import tensorflow as tf
 import tensorflow_probability as tfp
 import torch
-from torchtree.core.abstractparameter import AbstractParameter
 from torchtree.core.utils import process_object
-from torchtree.evolution.site_model import SiteModel
+from torchtree.evolution.site_model import UnivariateDiscretizedSiteModel
 
 
-class GammaSiteModel(SiteModel):
-    def __init__(
-        self,
-        id_: Union[str, None],
-        shape: AbstractParameter,
-        categories: int,
-        invariant: AbstractParameter = None,
-        mu: AbstractParameter = None,
-    ) -> None:
-        super().__init__(id_, mu)
-        self._shape = shape
-        self.categories = categories
-        self._invariant = invariant
-        self.probs = torch.full(
-            (categories,), 1.0 / categories, dtype=self.shape.dtype, device=shape.device
-        )
-        self._rates = None
-        self.need_update = True
-
+class GammaSiteModel(UnivariateDiscretizedSiteModel):
     @property
     def shape(self) -> torch.Tensor:
-        return self._shape.tensor
+        return self._parameter.tensor
 
-    @property
-    def invariant(self) -> torch.Tensor:
-        return self._invariant.tensor if self._invariant else None
-
-    def update_rates(self, shape: torch.Tensor, invariant: torch.Tensor):
-        # rates = DiscreteGammaFunction.apply(self.categories, invariant, shape)
-        if invariant:
-            cat = self.categories - 1
-            quantile = (
-                2.0 * torch.arange(cat, dtype=self.shape.dtype, device=shape.device)
-                + 1.0
-            ) / (2.0 * cat)
-            self.probs = torch.cat(
-                (
-                    invariant,
-                    torch.full((cat,), (1.0 - invariant) / cat, device=shape.device),
-                )
-            )
-            rates = torch.cat(
+    def inverse_cdf(
+        self, parameter: torch.Tensor, quantile: torch.Tensor, invariant: torch.Tensor
+    ) -> torch.Tensor:
+        if invariant is not None:
+            return torch.cat(
                 (
                     torch.zeros_like(invariant),
-                    GammaQuantileFunction.apply(quantile, shape),
-                )
+                    GammaQuantileFunction.apply(quantile, parameter),
+                ),
+                dim=-1,
             )
         else:
-            quantile = (
-                2.0
-                * torch.arange(
-                    self.categories, dtype=self.shape.dtype, device=shape.device
-                )
-                + 1.0
-            ) / (2.0 * self.categories)
-            rates = GammaQuantileFunction.apply(quantile, shape)
-
-        self._rates = rates / (rates * self.probs).sum(-1, keepdim=True)
-        if self._mu is not None:
-            self._rates *= self._mu.tensor
-
-    def rates(self) -> torch.Tensor:
-        if self.need_update:
-            self.update_rates(self.shape, self.invariant)
-            self.need_update = False
-        return self._rates
-
-    def probabilities(self) -> torch.Tensor:
-        if self.need_update:
-            self.update_rates(self.shape, self.invariant)
-            self.need_update = False
-        return self.probs
-
-    def handle_model_changed(self, model, obj, index):
-        pass
-
-    def handle_parameter_changed(self, variable, index, event):
-        self.need_update = True
-        self.fire_model_changed()
-
-    @property
-    def sample_shape(self) -> torch.Size:
-        return max(
-            [parameter.shape[:-1] for parameter in self._parameters.values()],
-            key=len,
-        )
-
-    def cuda(self, device: Optional[Union[int, torch.device]] = None):
-        super().cuda()
-        self.need_update = True
-
-    def cpu(self) -> None:
-        super().cpu()
-        self.need_update = True
+            return GammaQuantileFunction.apply(quantile, parameter)
 
     @classmethod
     def from_json(cls, data, dic):
-        id_ = data['id']
-        shape = process_object(data['shape'], dic)
-        categories = data['categories']
+        id_ = data["id"]
+        shape = process_object(data["shape"], dic)
+        categories = data["categories"]
         invariant = None
-        if 'invariant' in data:
-            invariant = process_object(data['invariant'], dic)
-        if 'mu' in data:
-            mu = process_object(data['mu'], dic)
+        if "invariant" in data:
+            invariant = process_object(data["invariant"], dic)
+        if "mu" in data:
+            mu = process_object(data["mu"], dic)
         else:
             mu = None
         return cls(id_, shape, categories, invariant, mu)
@@ -125,11 +46,11 @@ class GammaQuantileFunction(torch.autograd.Function):
         quantiles: torch.Tensor,
         shape: torch.Tensor,
     ) -> torch.Tensor:
-        tf_quantile = tf.constant(quantiles.numpy(), name='q')
+        tf_quantile = tf.constant(quantiles.numpy(), name="q")
 
         if shape.requires_grad:
             with tf.GradientTape(persistent=True) as tape:
-                tf_shape = tf.Variable(shape.detach().numpy(), name='shape')
+                tf_shape = tf.Variable(shape.detach().numpy(), name="shape")
                 dist = tfp.distributions.Gamma(concentration=tf_shape, rate=tf_shape)
                 tf_rates = dist.quantile(tf_quantile)
                 # gradient returns sum_i d tf_rates[i])/d tf_shape
@@ -139,7 +60,7 @@ class GammaQuantileFunction(torch.autograd.Function):
                 )
                 ctx.shape_grad = torch.tensor(grad.numpy(), dtype=shape.dtype)
         else:
-            tf_shape = tf.constant(shape.detach().numpy(), name='shape')
+            tf_shape = tf.constant(shape.detach().numpy(), name="shape")
             dist = tfp.distributions.Gamma(concentration=tf_shape, rate=tf_shape)
             tf_rates = dist.quantile(tf_quantile)
         return torch.tensor(tf_rates.numpy(), dtype=shape.dtype, device=shape.device)
